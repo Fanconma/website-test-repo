@@ -37,22 +37,10 @@
   }
   .icon-tile svg { width: 22px; height: 22px; stroke: #e8e8ea; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-  .hdr-row { display: flex; gap: 8px; }
-  .patch { flex: 1; text-align: center; min-width: 0; }
-  .patch .p { height: 40px; border: 1px solid #3a3a44; border-radius: calc(var(--device-radius) * 0.3); }
-  .patch span { display: block; font-size: 9.5px; color: #777; margin-top: 3px; }
-  .hint { font-size: 10.5px; color: #666; margin-top: 6px; }
-  .p-srgb-red { background: rgb(255, 0, 0); }
-  .p-p3-red { background: rgb(255, 0, 0); }
-  .p-white { background: #fff; }
-  .p-hdr-white { background: #fff; }
-  .p-hdr-color { background: #ffb020; }
-  @supports (color: color(display-p3 1 0 0)) {
-    .p-p3-red { background: color(display-p3 1 0 0); }
-  }
-  @supports (color: color(rec2100-pq 0.7 0.7 0.7)) {
-    .p-hdr-white { background: color(rec2100-pq 0.7 0.7 0.7); }
-    .p-hdr-color { background: color(rec2100-pq 0.7 0.5 0.1); }
+  #hdrCanvas, canvas.hdrfb {
+    display: block; width: 100%;
+    border: 1px solid #3a3a44; border-radius: calc(var(--device-radius) * 0.3);
+    background: #101014;
   }
 
   #sheet {
@@ -87,14 +75,9 @@
   <div class="icon-tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.7-3.6 3.5-5.4 7-5.4s6.3 1.8 7 5.4"/></svg></div>
 </div>
 
-<p class="lbl">HDR / Wide-gamut test</p>
-<div class="hdr-row">
-  <div class="patch"><div class="p p-srgb-red"></div><span>sRGB red</span></div>
-  <div class="patch"><div class="p p-p3-red"></div><span>P3 red</span></div>
-  <div class="patch"><div class="p p-white"></div><span>SDR white</span></div>
-  <div class="patch"><div class="p p-hdr-white"></div><span>HDR white</span></div>
-  <div class="patch"><div class="p p-hdr-color"></div><span>HDR color</span></div>
-</div>
+<p class="lbl">HDR</p>
+<canvas id="hdrCanvas"></canvas>
+
 <div id="sheet">
   <h2>Bottom Sheet</h2>
   <p id="sheetInfo"></p>
@@ -275,8 +258,6 @@ function render() {
   var dpr = window.devicePixelRatio || 1;
   var sa = safeArea();
   var hdr = hdrSupport();
-  var rec2100 = false;
-  try { rec2100 = !!(window.CSS && CSS.supports && CSS.supports('color', 'color(rec2100-pq 0.5 0.5 0.5)')); } catch (e) {}
   var modelText = state.model || (state.platform === 'Android' ? '(detecting…)' : 'not exposed');
 
   var rows = [
@@ -292,7 +273,8 @@ function render() {
     ['Color gamut', colorGamut()],
     ['HDR', (hdr.dynamic ? 'dynamic-range: high' : 'dynamic-range: no') +
             (hdr.video ? ' · video: high' : '') +
-            ' · rec2100 CSS: ' + (rec2100 ? 'yes' : 'no') + ' · ' + (screen.colorDepth || '?') + '-bit'],
+            ' · ' + (screen.colorDepth || '?') + '-bit'],
+    ['WebGPU HDR', state.webgpu],
     ['Battery', state.battery]
   ];
   document.getElementById('info').innerHTML =
@@ -303,14 +285,192 @@ function render() {
     'Applied corner radius: <b>' + (state.exact ? '' : '~') + state.radius + 'px</b> (' +
     (state.exact ? 'exact' : 'estimated') + ')';
   document.getElementById('sheetInfo').textContent =
-    'inset 12px · bottom corners: ' + state.radius + '−12 = ' + Math.max(state.radius - 12, 0) +
+    'bottom corners: ' + state.radius + '−12 = ' + Math.max(state.radius - 12, 0) +
     'px · buttons: ' + (state.radius * 0.45).toFixed(1) + 'px';
   document.body.style.paddingBottom = (document.getElementById('sheet').offsetHeight + 20) + 'px';
 }
 
+/* ---------- WebGPU HDR canvas ----------
+   Canvas: rgba16float + display-p3 + tone-mapping "extended" lets the shader
+   output values above 1.0 that the display shows brighter than SDR white.
+   Content is laid out on a 2D canvas first and uploaded as a texture:
+     red channel   = HDR patch  -> shader gain 10x
+     green channel = HDR words  -> shader gain 5x
+     blue channel  = normal text                                    */
+var HDR_SHADER = ''
+  + '@group(0) @binding(0) var samp: sampler;\n'
+  + '@group(0) @binding(1) var tex: texture_2d<f32>;\n'
+  + 'struct VOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };\n'
+  + '@vertex fn vs(@builtin(vertex_index) vi: u32) -> VOut {\n'
+  + '  var pts = array<vec2f,3>(vec2f(-1.0, -3.0), vec2f(-1.0, 1.0), vec2f(3.0, 1.0));\n'
+  + '  var o: VOut;\n'
+  + '  o.pos = vec4f(pts[vi], 0.0, 1.0);\n'
+  + '  o.uv = vec2f((pts[vi].x + 1.0) * 0.5, 1.0 - (pts[vi].y + 1.0) * 0.5);\n'
+  + '  return o;\n'
+  + '}\n'
+  + '@fragment fn fs(i: VOut) -> @location(0) vec4f {\n'
+  + '  let c = textureSample(tex, samp, i.uv);\n'
+  + '  var col = vec3f(0.0052, 0.0052, 0.0070);\n'
+  + '  col += c.b * vec3f(0.92);\n'
+  + '  col += c.g * vec3f(5.0);\n'
+  + '  col += c.r * vec3f(10.0);\n'
+  + '  return vec4f(col, 1.0);\n'
+  + '}\n';
+
+var HDR_WORDS = [
+  { t: 'The', b: false }, { t: 'quick', b: false }, { t: 'brown', b: false },
+  { t: 'fox', b: false }, { t: 'jumps', b: false }, { t: 'over', b: false },
+  { t: 'the', b: false }, { t: 'lazy', b: false }, { t: 'dog,', b: false },
+  { t: 'and', b: false }, { t: 'bright', b: true }, { t: 'text', b: false },
+  { t: 'glows', b: false }, { t: 'in', b: false }, { t: 'high', b: true },
+  { t: 'dynamic', b: true }, { t: 'range', b: true }, { t: 'above', b: false },
+  { t: 'ordinary', b: false }, { t: 'white.', b: false }
+];
+
+function buildHdrSource(cssW, mode) {
+  var dpr = window.devicePixelRatio || 1;
+  var c = document.createElement('canvas');
+  var ctx = c.getContext('2d');
+  var W = Math.max(1, Math.round(cssW * dpr));
+  var pad = Math.round(10 * dpr);
+  var patchH = Math.round(24 * dpr);
+  var gap = Math.round(9 * dpr);
+  var lineH = Math.round(19 * dpr);
+  var font = function (b) {
+    return (b ? 'bold ' : '') + Math.round(13 * dpr) +
+      'px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif';
+  };
+  ctx.font = font(false);
+  var space = ctx.measureText(' ').width;
+  var lines = [[]], x = 0, maxW = W - 2 * pad;
+  for (var i = 0; i < HDR_WORDS.length; i++) {
+    ctx.font = font(HDR_WORDS[i].b);
+    var w = ctx.measureText(HDR_WORDS[i].t).width;
+    if (x > 0 && x + space + w > maxW) { lines.push([]); x = 0; }
+    if (x > 0) x += space;
+    lines[lines.length - 1].push({ w: HDR_WORDS[i], width: w });
+    x += w;
+  }
+  var H = pad + patchH + gap + lines.length * lineH + pad;
+  c.width = W; c.height = H;
+  ctx.fillStyle = mode === 'mask' ? '#000' : '#101014';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = mode === 'mask' ? '#f00' : '#555';
+  ctx.fillRect(pad, pad, W - 2 * pad, patchH);
+  ctx.textBaseline = 'top';
+  for (var L = 0; L < lines.length; L++) {
+    var tx = pad, ty = pad + patchH + gap + L * lineH;
+    for (var j = 0; j < lines[L].length; j++) {
+      var wd = lines[L][j].w;
+      ctx.font = font(wd.b);
+      ctx.fillStyle = mode === 'mask' ? (wd.b ? '#0f0' : '#00f') : (wd.b ? '#fff' : '#c9c9cf');
+      ctx.fillText(wd.t, tx, ty);
+      tx += lines[L][j].width + space;
+    }
+  }
+  return { canvas: c, cssH: H / dpr };
+}
+
+var gpuDevice = null, lastHdrW = 0, hdrRzTimer = null;
+
+async function initHdr() {
+  var el = document.getElementById('hdrCanvas');
+  if (!el) return;
+  var old = document.querySelector('canvas.hdrfb');
+  if (old) old.parentNode.removeChild(old);
+  el.style.display = 'block';
+  var cssW = el.clientWidth || 320;
+  lastHdrW = cssW;
+  var src = buildHdrSource(cssW, 'mask');
+  el.width = src.canvas.width;
+  el.height = src.canvas.height;
+  el.style.height = src.cssH + 'px';
+
+  var fallback = function (status) {
+    state.webgpu = status;
+    el.style.display = 'none';
+    var fb = buildHdrSource(cssW, 'direct');
+    fb.canvas.className = 'hdrfb';
+    fb.canvas.style.width = '100%';
+    fb.canvas.style.height = fb.cssH + 'px';
+    el.parentNode.insertBefore(fb.canvas, el);
+    render();
+  };
+
+  try {
+    if (!navigator.gpu) { fallback('unavailable'); return; }
+    var ctx = el.getContext('webgpu');
+    if (!ctx) { fallback('unavailable'); return; }
+    if (!gpuDevice) {
+      var adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) { fallback('no adapter'); return; }
+      gpuDevice = await adapter.requestDevice();
+    }
+    var device = gpuDevice;
+    var colorSpace = 'display-p3';
+    try {
+      ctx.configure({ device: device, format: 'rgba16float', alphaMode: 'opaque',
+        colorSpace: colorSpace, toneMapping: { mode: 'extended' } });
+    } catch (e1) {
+      colorSpace = 'srgb';
+      ctx.configure({ device: device, format: 'rgba16float', alphaMode: 'opaque',
+        toneMapping: { mode: 'extended' } });
+    }
+    var tm = 'unknown';
+    if (ctx.getConfiguration) {
+      var gc = ctx.getConfiguration();
+      tm = (gc && gc.toneMapping && gc.toneMapping.mode === 'extended') ? 'extended' : 'standard';
+    }
+    var tex = device.createTexture({
+      size: [src.canvas.width, src.canvas.height],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+    });
+    device.queue.copyExternalImageToTexture(
+      { source: src.canvas }, { texture: tex }, [src.canvas.width, src.canvas.height]);
+    var sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    var module = device.createShaderModule({ code: HDR_SHADER });
+    var pipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: module, entryPoint: 'vs' },
+      fragment: { module: module, entryPoint: 'fs', targets: [{ format: 'rgba16float' }] }
+    });
+    var bind = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: tex.createView() }]
+    });
+    var enc = device.createCommandEncoder();
+    var pass = enc.beginRenderPass({
+      colorAttachments: [{
+        view: ctx.getCurrentTexture().createView(),
+        loadOp: 'clear', clearValue: { r: 0.0052, g: 0.0052, b: 0.007, a: 1 }, storeOp: 'store'
+      }]
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bind);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([enc.finish()]);
+    state.webgpu = 'rgba16float · ' + colorSpace + ' · tone-mapping: ' + tm;
+    render();
+  } catch (e) {
+    fallback('error: ' + (e && e.message ? e.message : e));
+  }
+}
+
+window.addEventListener('resize', function () {
+  clearTimeout(hdrRzTimer);
+  hdrRzTimer = setTimeout(function () {
+    var el = document.getElementById('hdrCanvas');
+    var w = el ? (el.clientWidth || 0) : 0;
+    if (el && Math.abs(w - lastHdrW) > 40) initHdr();
+  }, 200);
+});
+
 /* ---------- init ---------- */
 resolveRadius();
 render();
+initHdr();
 
 /* live listeners */
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render); } catch (e) {}

@@ -37,13 +37,31 @@
   }
   .icon-tile svg { width: 22px; height: 22px; stroke: #e8e8ea; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-  #sheet {
-    position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 10;
-    background: #15151b; border: 1px solid #3a3a44; padding: 13px 15px;
-    border-radius: 16px 16px max(0px, calc(var(--device-radius) - 12px)) max(0px, calc(var(--device-radius) - 12px));
+  .card {
+    display: flex; gap: 14px; align-items: center;
+    background: #191920; border: 1px solid #33333c;
+    border-radius: calc(var(--device-radius) * 0.6);
+    padding: 14px 16px;
   }
-  #sheet h2 { font-size: 14px; margin-bottom: 2px; color: #fff; }
-  #sheetInfo { font-size: 11px; color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; margin-bottom: 9px; }
+  .card-art {
+    width: 54px; height: 54px; flex: none;
+    background: #101014; border: 1px solid #2c2c33;
+    border-radius: calc(var(--device-radius) * 0.35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card-art svg { width: 26px; height: 26px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .card-body h3 { font-size: 14px; color: #fff; margin-bottom: 3px; }
+  .card-body p { font-size: 12px; color: #999; line-height: 1.45; }
+  .card-meta { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--accent); margin-top: 6px; }
+
+  #sheet {
+    position: fixed; left: 12px; right: 12px; bottom: max(14px, env(safe-area-inset-bottom)); z-index: 10;
+    max-width: 496px; margin: 0 auto;
+    background: #15151b; border: 1px solid #3a3a44; padding: 18px 20px;
+    border-radius: 22px 22px max(16px, calc(var(--device-radius) - 8px)) max(16px, calc(var(--device-radius) - 8px));
+  }
+  #sheet h2 { font-size: 15px; margin-bottom: 4px; color: #fff; }
+  #sheetInfo { font-size: 11px; color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; margin-bottom: 12px; }
   .row { display: flex; gap: 10px; }
   button.btn {
     font-size: 15px; padding: 10px 18px;
@@ -55,7 +73,7 @@
   /* Continuous-curvature corners (matches OEM squircle screens);
      falls back to circular border-radius automatically. */
   @supports (corner-shape: squircle) {
-    button.btn, .icon-tile, #sheet { corner-shape: squircle; }
+    button.btn, .icon-tile, .card, .card-art, #sheet { corner-shape: squircle; }
   }
 </style>
 </head>
@@ -73,6 +91,16 @@
   <div class="icon-tile"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 20 20"/></svg></div>
   <div class="icon-tile"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.3-8.7-8.5C2 8 3.8 5 6.9 5c1.9 0 3.5 1 4.1 2.6C11.6 6 13.2 5 15.1 5c3.1 0 4.9 3 3.6 6.5C17 15.7 12 20 12 20z"/></svg></div>
   <div class="icon-tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.7-3.6 3.5-5.4 7-5.4s6.3 1.8 7 5.4"/></svg></div>
+</div>
+
+<p class="lbl">Card — radius × 0.6</p>
+<div class="card">
+  <div class="card-art"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 15V9h3a2.2 2.2 0 0 1 0 4.4H9m3 0 3 1.6"/></svg></div>
+  <div class="card-body">
+    <h3>Card preview</h3>
+    <p>A sample card whose corners scale with the detected device radius.</p>
+    <p class="card-meta" id="cardMeta"></p>
+  </div>
 </div>
 
 <div id="sheet">
@@ -190,8 +218,11 @@ function render() {
     'Applied corner radius: <b>' + (state.exact ? '' : '~') + state.radius + 'px</b> (' +
     (state.exact ? 'exact' : 'estimated') + ')';
   document.getElementById('sheetInfo').textContent =
-    'bottom corners: ' + state.radius + '−12 = ' + Math.max(state.radius - 12, 0) +
-    'px · buttons: ' + (state.radius * 0.45).toFixed(1) + 'px';
+    'bottom: max(16, ' + state.radius + '−8) = ' + Math.max(state.radius - 8, 16) +
+    'px · buttons: ' + (state.radius * 0.45).toFixed(1) +
+    'px · card: ' + (state.radius * 0.6).toFixed(1) + 'px';
+  document.getElementById('cardMeta').textContent =
+    'border-radius: ' + state.radius + ' × 0.6 = ' + (state.radius * 0.6).toFixed(1) + 'px';
   document.body.style.paddingBottom = (document.getElementById('sheet').offsetHeight + 20) + 'px';
 }
 

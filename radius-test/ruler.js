@@ -4,7 +4,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   /* ---------------- 常量（单位：屏幕 CSS px） ---------------- */
   var CELL = 2;                 // 位置编码单元尺寸
@@ -649,14 +649,18 @@
 
     function sampleRow(yy, flip, ptsL, ptsR, notL, notR) {
       pr = S.leadingRun(yy, 'near');
-      var yc = flip ? H - 1 - yy : yy;
+      // Corner fitting uses the screen edge as y=H. Reflect top rows across that
+      // edge (H-y), not across the last pixel index (H-1-y), or the anchored
+      // screen-corner model is shifted by one pixel and can bias short arcs.
+      var cornerY = flip ? H - yy : yy;
+      var notchY = yy;
       // 只收「深度 > 编码条宽 + 2」的凹口：更浅的游程末端落在装饰区，无法判定，
       // 否则每一行都会在 x≈STRIP 处被装饰区截断，产生成片假凹口。
-      if (pr.a > 0) ptsL.push([pr.a, yc]);
-      else if (pr.e !== null && pr.e > STRIP + 2 && pr.e < z - 2) notL.push([pr.e, yc]);
+      if (pr.a > 0) ptsL.push([pr.a, cornerY]);
+      else if (pr.e !== null && pr.e > STRIP + 2 && pr.e < z - 2) notL.push([pr.e, notchY]);
       pr = S.leadingRun(yy, 'far');
-      if (pr.a > 0) ptsR.push([pr.a, yc]);
-      else if (pr.e !== null && pr.e > STRIP + 2 && pr.e < z - 2) notR.push([pr.e, yc]);
+      if (pr.a > 0) ptsR.push([pr.a, cornerY]);
+      else if (pr.e !== null && pr.e > STRIP + 2 && pr.e < z - 2) notR.push([pr.e, notchY]);
     }
     for (y = yBotLo; y < H; y++) sampleRow(y, false, blPts, brPts, nbL, nbR);
     for (y = 0; y <= yTopHi; y++) sampleRow(y, true, tlPts, trPts, ntL, ntR);
@@ -676,8 +680,11 @@
 
     var fitBL = fitCorner(blPts, H, yBot);
     var fitBR = fitCorner(brPts, H, yBot);
-    var fitTL = fitCorner(tlPts, H, H - 1 - yTop);
-    var fitTR = fitCorner(trPts, H, H - 1 - yTop);
+    // Top rows were reflected with H-y above, so the visible edge must use the
+    // same coordinate convention (rather than the last pixel index H-1-y).
+    var topVisibleBottom = H - yTop;
+    var fitTL = fitCorner(tlPts, H, topVisibleBottom);
+    var fitTR = fitCorner(trPts, H, topVisibleBottom);
 
     /* 遮挡物凹口：形状是圆角，但长在遮挡物（工具条 / 面板）上而不是屏幕边缘。
        底部遮挡物的凹口，割深随 y 减小而增大 → 翻转到 y'=H-1-y 后与屏幕圆角同一模型族；

@@ -206,6 +206,10 @@ try {
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'ruler.js'), 'utf8'), ctx, { filename: 'ruler.js' });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
   check('ruler.js + app.js 初始化无异常', true);
+  registry.btnHide.onclick();
+  check('截图模式隐藏面板', registry.hud.style.display === 'none' && registry.hint.className === 'on');
+  registry.hint.onclick();
+  check('点屏幕返回测量页', registry.hud.style.display === '' && registry.hint.className === '');
 } catch (e) {
   check('ruler.js + app.js 初始化无异常', false, (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)));
   console.log('\n有失败项：' + PASS + ' passed, ' + (FAIL + 1) + ' failed');
@@ -255,19 +259,44 @@ var flows = [
     flows[i][1]();
     await sleep(40);
     var r = reportRadius();
-    check('通道「' + name + '」→ 报告半径 ≈ ' + RADIUS,
-      Math.abs(r - RADIUS) <= 6, '报告值 ' + (isNaN(r) ? '（无报告）' : r) + ' · 状态 ' + txt());
+    check('通道「' + name + '」→ 报告半径误差 ≤ 1px',
+      Math.abs(r - RADIUS) <= 1, '报告值 ' + (isNaN(r) ? '（无报告）' : r) + ' · 状态 ' + txt());
     check('通道「' + name + '」→ 底部遮挡 ≈ ' + BOTTOM_BAR,
-      rep().indexOf('<b>' + BOTTOM_BAR + '</b> px') >= 0 || /<b>6[01]<\/b> px/.test(rep()),
-      (rep().match(/底部被遮<\/td><td><b>(\d+)<\/b>/) || [])[1] || '未找到');
+      rep().indexOf('底部遮挡</td>') >= 0 && /<b>6[01]<\/b> px/.test(rep()),
+      (rep().match(/底部遮挡<\/td><td><b>(\d+)<\/b>/) || [])[1] || '未找到');
+    if (i === 0) {
+      var firstJson = null;
+      try { firstJson = JSON.parse(registry.jsonOut.value); } catch (e) {}
+      var firstCapture = firstJson && firstJson.captures[firstJson.captures.length - 1];
+      check('分析保留截图原始像素', firstCapture && firstCapture.analyzedWidth === W * DPR && firstCapture.analyzedHeight === H * DPR,
+        firstCapture ? firstCapture.analyzedWidth + '×' + firstCapture.analyzedHeight : '无记录');
+      check('导入后不立即绘制预览图', registry.overlay.width === 300);
+    }
   }
 
   registry.result.innerHTML = ''; registry.status.textContent = '';
   clipboardImage = null;
   registry.btnPaste.onclick();
   await sleep(40);
-  check('剪贴板失败 → 显示粘贴框（有反馈）', registry.pastebox.className === 'on',
-    'class="' + registry.pastebox.className + '" 状态: ' + txt());
+  check('剪贴板失败 → 显示粘贴框', registry.pastebox.className === 'on',
+    'class="' + registry.pastebox.className + '"');
+
+  /* 多张截图依次进入同一分析队列 */
+  makeShot();
+  registry.file.onchange({ target: { value: 'selected', files: [
+    { type: 'image/png', name: 'sample-a.png' },
+    { type: 'image/png', name: 'sample-b.png' }
+  ] } });
+  await sleep(3500);
+  var batchJson = null;
+  try { batchJson = JSON.parse(registry.jsonOut.value); } catch (e) {}
+  check('多张截图进入队列', batchJson && batchJson.captures.length >= 6 &&
+    batchJson.captures[batchJson.captures.length - 2].name === 'sample-a.png' &&
+    batchJson.captures[batchJson.captures.length - 1].name === 'sample-b.png');
+  check('多张结果使用中位数', rep().indexOf('多张中位数') >= 0 && Math.abs(reportRadius() - RADIUS) <= 1,
+    '合并值 ' + reportRadius());
+  check('一致截图计入有效结果', batchJson && batchJson.combined.reliableCount >= 2,
+    batchJson ? '有效 ' + batchJson.combined.reliableCount + ' 张' : '无数据');
 
   /* ⑤ JSON */
   makeShot();

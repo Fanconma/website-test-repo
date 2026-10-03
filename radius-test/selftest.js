@@ -292,6 +292,13 @@ function run(name, W, H, opts, expect) {
     check('左上 R ≈ ' + expect.topR, t && near(t.R, expect.topR, tol2), t ? '实测 R=' + t.R : '无');
     check('右上 R ≈ ' + expect.topR, t2 && near(t2.R, expect.topR, tol2), t2 ? '实测 R=' + t2.R : '无');
   }
+  if (expect.preciseTop !== undefined) {
+    ['topLeft', 'topRight'].forEach(function (k) {
+      var corner = res.corners[k];
+      check(k + ' 顶角拟合误差 ≤ 1px', corner && near(corner.R, expect.preciseTop, 1),
+        corner ? '实测 R=' + corner.R + ' · 模型 ' + corner.model : '无');
+    });
+  }
   if (expect.model) {
     var cc2 = res.corners.bottomLeft;
     check('左下最佳模型 = ' + expect.model, cc2 && cc2.model === expect.model, cc2 ? '实测 ' + cc2.model + ' (yt=' + cc2.yt + ')' : '无');
@@ -360,7 +367,7 @@ run('A. 全面屏 R=44 + 底部被浏览器 UI 遮 60px（圆角被遮住，测�
 
 run('B. 全面屏 R=44，无任何遮挡（QQ 内置浏览器全屏态）', MW, MH,
   { bottomR: 44, topR: 44 },
-  { occluded: 0, bottomR: 44, topR: 44, model: 'atScreenBottom', suggest: 44, noWarn: true });
+  { occluded: 0, bottomR: 44, topR: 44, preciseTop: 44, model: 'atScreenBottom', suggest: 44, noWarn: true });
 
 run('C. 方角屏（R=0）+ 底部被遮 40px → 四角都应报「测不到圆角」', MW, MH,
   { occludeBottom: 40 },
@@ -388,7 +395,7 @@ run('H. 平板 820×1180，小圆角 R=18（浅切弧线，全靠从 x=0 起扫�
 
 run('I. 手机真实形态：dpr=3 的整屏高清截图（无遮挡，R=44）', MW, MH,
   { bottomR: 44, topR: 44, scale: 3 },
-  { occluded: 0, bottomR: 44, topR: 44, scale: 3, suggest: 44, safeTop: 44 });
+  { occluded: 0, bottomR: 44, topR: 44, preciseTop: 44, scale: 3, suggest: 44, safeTop: 44 });
 
 run('J. 暗色 UI 遮挡（深灰而非纯黑）+ R=44', MW, MH,
   { bottomR: 44, topR: 44, occludeBottom: 70, occludeColor: [14, 15, 20] },

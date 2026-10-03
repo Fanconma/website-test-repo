@@ -1,95 +1,128 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>屏幕圆角test</title>
+<title>屏幕圆角测量</title>
 <style>
-  :root { --bg:#0b0d12; --fg:#e9edf5; --mut:#8b93a7; --acc:#7aa7ff; --ok:#3ddc84; --bad:#ff5a6e; --mid:#ffc857; --line:#232838; }
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { height:100%; overflow:hidden; overscroll-behavior:none; background:var(--bg); color:var(--fg);
-    font:13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  :root {
+    --bg: #0b0d12;
+    --panel: #10131c;
+    --fg: #e9edf5;
+    --muted: #929bad;
+    --line: #252b3a;
+    --accent: #7aa7ff;
+    --good: #3ddc84;
+    --warn: #ffc857;
+    --bad: #ff687a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  #probe { position: fixed; left: 0; top: 0; z-index: 0; display: block; }
+  #hint { position: fixed; inset: 0; z-index: 5; display: none; background: transparent; }
+  #hint.on { display: block; }
 
-  #probe { position:fixed; left:0; top:0; z-index:0; display:block; }
-  #hint { position:fixed; inset:0; z-index:5; display:none; }
-  #hint.on { display:block; }
+  #hud {
+    position: fixed; inset: 0; z-index: 10; overflow: auto; -webkit-overflow-scrolling: touch;
+    padding: max(16px, env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    background: var(--bg);
+  }
+  .content { width: min(100%, 540px); margin: 0 auto; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 3px; }
+  .top b { color: #fff; font-size: 18px; font-weight: 650; }
+  #status { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+  #status.err { color: var(--bad); }
+  #status.ok { color: var(--good); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 42px; padding: 8px 15px; border: 1px solid var(--accent); border-radius: 10px;
+    background: var(--accent); color: #0b0d12; font: inherit; font-weight: 650; cursor: pointer; text-decoration: none;
+  }
+  .btn.ghost { border-color: #3b4357; background: transparent; color: var(--fg); font-weight: 500; }
+  .btn.small { min-height: 34px; padding: 5px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  #file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .subnote { margin: 7px 1px 0; color: var(--muted); font-size: 11px; }
+  #pastebox { display: none; min-height: 44px; margin-top: 9px; padding: 10px; border: 1px dashed #454d63; border-radius: 10px; color: var(--fg); font-size: 12px; }
+  #pastebox.on { display: block; }
 
-  #hud { position:fixed; inset:0; z-index:10; overflow:auto; -webkit-overflow-scrolling:touch;
-    padding:max(10px, env(safe-area-inset-top)) 12px calc(20px + env(safe-area-inset-bottom));
-    background:var(--bg); }
-  .top { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
-  .top b { font-size:15px; font-weight:600; }
-  #status { font-size:11.5px; color:var(--mut); font-variant-numeric:tabular-nums; }
-  #status.err { color:var(--bad); }
-  #status.ok { color:var(--ok); }
+  #queue:empty, #result:empty { display: none; }
+  .queue-box { margin-top: 14px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: #0f121a; }
+  .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+  .queue-head b { color: #fff; font-size: 12px; }
+  .queue-list { list-style: none; margin: 0; padding: 0; }
+  .queue-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid rgba(255,255,255,.045); color: var(--muted); font-size: 12px; }
+  .queue-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-value { flex: 0 0 auto; color: #dfe5ef; font-variant-numeric: tabular-nums; }
+  .queue-value.good { color: var(--good); }
+  .queue-value.warn { color: var(--warn); }
+  .queue-value.bad { color: var(--bad); }
 
-  table { width:100%; border-collapse:collapse; font-size:12px; }
-  td { border:1px solid var(--line); padding:4px 7px; vertical-align:top; }
-  #auto td:first-child, table.kv td:first-child { width:38%; color:var(--mut); background:#10131c; white-space:nowrap; }
-  td code { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:#ffd479; }
-  b { color:#fff; } .mut { color:var(--mut); }
-
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
-  .btn { font:inherit; font-size:13px; padding:9px 14px; border-radius:10px; border:1px solid var(--acc);
-    background:var(--acc); color:#0b0d12; font-weight:600; cursor:pointer; }
-  .btn.ghost { background:transparent; color:var(--fg); border-color:#39415a; }
-  #file { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
-  input[type=number] { width:78px; padding:8px; border-radius:9px; border:1px solid var(--line); background:#0e1119; color:var(--fg); font:inherit; }
-
-  #pastebox { display:none; margin-top:8px; min-height:44px; border:1.5px dashed #3b4157; border-radius:10px;
-    padding:10px; color:var(--mut); font-size:12px; }
-  #pastebox.on { display:block; }
-
-  #result:empty { display:none; }
-  .verdict { border-radius:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--line); background:#10131c; }
-  .verdict.ok { border-color:rgba(61,220,132,.55); }
-  .verdict.mid { border-color:rgba(255,200,87,.55); }
-  .verdict.bad { border-color:rgba(255,90,110,.55); }
-  .vrow { display:flex; align-items:baseline; gap:6px; }
-  .vnum { font-size:38px; font-weight:700; line-height:1.05; color:#fff; font-variant-numeric:tabular-nums; }
-  .vunit { color:var(--acc); font-size:15px; font-weight:600; }
-  .vlabel { margin-left:8px; font-size:12px; color:#cbd3e4; }
-  .vmeta { margin-top:6px; font-size:11.5px; color:var(--mut); }
-  h3 { font-size:13px; margin:14px 0 6px; color:#fff; }
-  .alert { border-radius:10px; padding:8px 10px; font-size:12px; margin-top:6px;
-    background:rgba(255,90,110,.09); border:1px solid rgba(255,90,110,.45); color:#ffc3cb; }
-  pre.log { background:#0e1119; border:1px solid var(--line); border-radius:10px; padding:8px 10px;
-    font:11px/1.6 ui-monospace, Menlo, Consolas, monospace; color:#9fb0cd; white-space:pre-wrap; word-break:break-all; }
-  canvas.overlay { display:block; width:100%; max-width:340px; margin:4px auto; border:1px solid var(--line); border-radius:8px; background:#0b0d12; }
-  textarea.json { width:100%; background:#0e1119; color:#9fb0cd; border:1px solid var(--line); border-radius:10px;
-    padding:8px; font:11px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  .verdict { margin-top: 14px; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .verdict.good { border-color: rgba(61,220,132,.5); }
+  .verdict.mid { border-color: rgba(255,200,87,.5); }
+  .verdict.bad { border-color: rgba(255,104,122,.5); }
+  .vrow { display: flex; align-items: baseline; gap: 7px; }
+  .vnum { color: #fff; font-size: 42px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .vunit { color: var(--accent); font-size: 15px; font-weight: 650; }
+  .vtitle { margin-left: 3px; color: #d5dbea; font-size: 13px; }
+  .vmeta { margin-top: 7px; color: var(--muted); font-size: 12px; }
+  details { margin-top: 13px; }
+  details > summary { padding: 10px 1px; color: #c8d0df; font-size: 12px; cursor: pointer; }
+  .diagnostics { margin-top: 18px; border-top: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 5px 7px; border: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  #auto td:first-child, .kv td:first-child { width: 38%; background: #10131c; color: var(--muted); white-space: nowrap; }
+  td code { color: #ffd479; font: 11px ui-monospace, Menlo, Consolas, monospace; }
+  .mut { color: var(--muted); }
+  .alert { margin-top: 7px; padding: 9px 10px; border: 1px solid rgba(255,104,122,.42); border-radius: 10px; background: rgba(255,104,122,.08); color: #ffc3cb; font-size: 12px; }
+  h3 { margin: 14px 0 6px; color: #fff; font-size: 12px; }
+  pre.log { overflow-wrap: anywhere; white-space: pre-wrap; margin: 0; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: #0e1119; color: #9fb0cd; font: 11px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  canvas.overlay { display: block; width: 100%; max-width: 340px; height: auto; margin: 5px auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  textarea.json { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: #0e1119; color: #9fb0cd; font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  .size-input { width: 82px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: #0e1119; color: var(--fg); font: inherit; }
 </style>
 </head>
 <body>
-
 <canvas id="probe"></canvas>
-<div id="hint"></div>
+<div id="hint" aria-hidden="true"></div>
 
-<div id="hud">
-  <div class="top"><b>屏幕圆角test</b><span id="status"></span></div>
+<main id="hud">
+  <div class="content">
+    <header class="top"><b>屏幕圆角</b><span id="status"></span></header>
 
-  <table id="auto"></table>
+    <div class="row">
+      <label class="btn" for="file">导入截图</label>
+      <input type="file" id="file" accept="image/*" multiple>
+      <button class="btn ghost" id="btnPaste" type="button">粘贴</button>
+      <button class="btn ghost" id="btnHide" type="button">开始截图</button>
+    </div>
+    <div id="pastebox" contenteditable="true" role="textbox" aria-label="粘贴截图" spellcheck="false"></div>
 
-  <div class="row">
-    <label class="btn" for="file">选择图片</label>
-    <input type="file" id="file" accept="image/*">
-    <button class="btn" id="btnPaste">粘贴</button>
-    <button class="btn ghost" id="btnHide">隐藏面板</button>
+    <div id="queue" aria-live="polite"></div>
+    <div id="result"></div>
+
+    <details class="diagnostics">
+      <summary>设备与尺寸</summary>
+      <table id="auto"></table>
+      <div class="row">
+        <input class="size-input" type="number" id="manW" inputmode="numeric" placeholder="宽度">
+        <input class="size-input" type="number" id="manH" inputmode="numeric" placeholder="高度">
+        <button class="btn ghost small" id="btnManual" type="button">应用尺寸</button>
+        <button class="btn ghost small" id="btnRedraw" type="button">重绘探针</button>
+      </div>
+    </details>
   </div>
+</main>
 
-  <div class="row">
-    <input type="number" id="manW" inputmode="numeric" placeholder="宽">
-    <input type="number" id="manH" inputmode="numeric" placeholder="高">
-    <button class="btn ghost" id="btnManual">尺寸</button>
-    <button class="btn ghost" id="btnRedraw">重绘</button>
-  </div>
-
-  <div id="pastebox" contenteditable="true" spellcheck="false"></div>
-  <div id="result"></div>
-</div>
-
-<script src="ruler.js"></script>
-<script src="app.js"></script>
+<script src="ruler.js?v=radius-fix-2"></script>
+<script src="app.js?v=radius-fix-2"></script>
 </body>
 </html>

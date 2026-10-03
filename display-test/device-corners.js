@@ -1,5 +1,5 @@
 /*!
- * device-corners.js v1.1.0
+ * device-corners.js v1.1.1
  * Query a device's screen corner radius and corner curvature.
  *
  * API
@@ -20,6 +20,9 @@
  *
  * Detection order: CSS radius media query (exact) -> iOS logical-size table ->
  * Android model-code database -> brand default -> generic default.
+ * Desktop displays have square corners, so the generic default on Desktop is a
+ * design radius (24) rather than a physical measurement — exported as
+ * DeviceCorners.DEFAULTS so callers can override the choice in their UI.
  *
  * Model codes verified against the MobileModels database
  * (https://github.com/KHwang9883/MobileModels, CC BY-NC-SA 4.0 — data is
@@ -81,6 +84,11 @@
     samsung: 28, huawei: 40, honor: 36, oppo: 34, vivo: 34,
     xiaomi: 44, redmi: 32, pixel: 18
   };
+
+  /* Generic fallbacks. Desktop displays are square-cornered, so Desktop gets a
+     larger design radius instead of a tiny physical one. */
+  var DEFAULT_RADIUS = 16;
+  var DESKTOP_DEFAULT_RADIUS = 24;
 
   /* ================= internals ================= */
   function ua() { return (typeof navigator !== 'undefined' && navigator.userAgent) || ''; }
@@ -223,7 +231,8 @@
           platform: platform, model: model, brand: brand });
       }
     }
-    return makeResult({ radius: 16, source: mq === 0 ? 'default' : 'default',
+    var fallback = platform === 'Desktop' ? DESKTOP_DEFAULT_RADIUS : DEFAULT_RADIUS;
+    return makeResult({ radius: fallback, source: 'default',
       platform: platform, model: model });
   }
 
@@ -274,7 +283,7 @@
   }
 
   return {
-    version: '1.1.0',
+    version: '1.1.1',
     detect: detect,
     detectSync: detectSync,
     lookup: function (model) {
@@ -287,6 +296,7 @@
     applyCss: applyCss,
     IOS_SIZES: IOS_SIZES,
     MODELS: MODELS,
-    BRAND_DEFAULTS: BRAND_DEFAULTS
+    BRAND_DEFAULTS: BRAND_DEFAULTS,
+    DEFAULTS: { generic: DEFAULT_RADIUS, desktop: DESKTOP_DEFAULT_RADIUS }
   };
 });

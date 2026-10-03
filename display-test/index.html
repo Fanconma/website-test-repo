@@ -57,6 +57,12 @@
     border-radius: calc(var(--device-radius) * 0.45);
   }
   button.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+  /* Continuous-curvature corners (matches OEM squircle screens);
+     falls back to circular border-radius automatically. */
+  @supports (corner-shape: squircle) {
+    button.btn, .icon-tile, #sheet { corner-shape: squircle; }
+  }
 </style>
 </head>
 <body>
@@ -147,16 +153,132 @@ function radiusByIOSSize() {
   return r !== undefined ? r : null;
 }
 
-/* ---------- Android: model -> brand -> radius table ---------- */
-var BRAND_RADIUS = {
+/* ---------- Android model database ----------
+   Radius values are BASE radii in dp for continuous-curvature (squircle)
+   corners. Model codes verified against the MobileModels database
+   (github.com/luckyzyx/MobileModels); prefixes cover CN/Global/India
+   variants. Values are initial estimates - refine from tester
+   screenshots (MIUI/HyperOS bakes the rounded mask into screenshots,
+   see screenshot-radius.py). Pre-2023 Xiaomi/Redmi falls back to the
+   unified brand default. POCO rebrands share Redmi codes.          */
+var ANDROID_MODELS = [
+  /* Xiaomi numbered flagships */
+  { p: '23127PN0', n: 'Xiaomi 14',            r: 44 },
+  { p: '23116PN5', n: 'Xiaomi 14 Pro',        r: 46 },
+  { p: '2311BPN2', n: 'Xiaomi 14 Pro Ti',     r: 46 },
+  { p: '24030PN6', n: 'Xiaomi 14 Ultra',      r: 46 },
+  { p: '24031PN0', n: 'Xiaomi 14 Ultra',      r: 46 },
+  { p: '2406APNF', n: 'Xiaomi 14T',           r: 44 },
+  { p: '2407FPN8', n: 'Xiaomi 14T Pro',       r: 46 },
+  { p: '24129PN7', n: 'Xiaomi 15',            r: 46 },
+  { p: '24101PNB', n: 'Xiaomi 15 Pro',        r: 48 },
+  { p: '2410DPN6', n: 'Xiaomi 15 Pro',        r: 48 },
+  { p: '25010PN3', n: 'Xiaomi 15 Ultra',      r: 48 },
+  { p: '25019PNF', n: 'Xiaomi 15 Ultra',      r: 48 },
+  { p: '25042PN2', n: 'Xiaomi 15S Pro',       r: 48 },
+  { p: '25069PTE', n: 'Xiaomi 15T',           r: 46 },
+  { p: '2506BPN6', n: 'Xiaomi 15T Pro',       r: 48 },
+  { p: '25113PN0', n: 'Xiaomi 17',            r: 48 },
+  { p: '25098PN5', n: 'Xiaomi 17 Pro',        r: 50 },
+  { p: '2509FPN0', n: 'Xiaomi 17 Pro Max',    r: 50 },
+  { p: '2512BPND', n: 'Xiaomi 17 Ultra',      r: 50 },
+  { p: '25128PNA', n: 'Xiaomi 17 Ultra',      r: 50 },
+  { p: '2605EPN8', n: 'Xiaomi 17 Max',        r: 46 },
+  { p: '2602DPT5', n: 'Xiaomi 17T',           r: 48 },
+  { p: 'M531DA',   n: 'Xiaomi 17T',           r: 48 },
+  { p: '2602EPTC', n: 'Xiaomi 17T Pro',       r: 50 },
+  { p: 'M025EC',   n: 'Xiaomi 17T Pro',       r: 50 },
+  /* Xiaomi Civi / MIX fold & flip */
+  { p: '24053PY0', n: 'Xiaomi Civi 4 Pro',    r: 44 },
+  { p: '25067PYE', n: 'Xiaomi Civi 5 Pro',    r: 44 },
+  { p: '2308CPXD', n: 'Xiaomi MIX Fold 3',    r: 18 },
+  { p: '24072PX7', n: 'Xiaomi MIX Fold 4',    r: 18 },
+  { p: '2405CPX3', n: 'Xiaomi MIX Flip',      r: 40 },
+  { p: '2505APX7', n: 'Xiaomi MIX Flip 2',    r: 40 },
+  /* Redmi K series */
+  { p: '23113RKC', n: 'Redmi K70',            r: 40 },
+  { p: '23117RK6', n: 'Redmi K70 Pro',        r: 42 },
+  { p: '2311DRK4', n: 'Redmi K70E',           r: 36 },
+  { p: '2407FRK8', n: 'Redmi K70 Ultra',      r: 42 },
+  { p: '24117RK2', n: 'Redmi K80',            r: 42 },
+  { p: '24122RKC', n: 'Redmi K80 Pro',        r: 44 },
+  { p: '24127RK2', n: 'Redmi K80 Pro',        r: 44 },
+  { p: '25060RK1', n: 'Redmi K80 Ultra',      r: 44 },
+  { p: '2510DRK4', n: 'Redmi K90',            r: 44 },
+  { p: '25102RKB', n: 'Redmi K90 Pro Max',    r: 46 },
+  { p: '25102RK6', n: 'Redmi K90 Pro Max',    r: 46 },
+  { p: '2604FRK1', n: 'Redmi K90 Max',        r: 46 },
+  /* Redmi Turbo series */
+  { p: '24069RA2', n: 'Redmi Turbo 3',        r: 38 },
+  { p: '24129RT7', n: 'Redmi Turbo 4',        r: 40 },
+  { p: '25053RT4', n: 'Redmi Turbo 4 Pro',    r: 42 },
+  { p: '2511FRT3', n: 'Redmi Turbo 5',        r: 42 },
+  { p: '2606FRT3', n: 'Redmi Turbo 5',        r: 42 },
+  { p: '2602BRT1', n: 'Redmi Turbo 5 Max',    r: 44 },
+  /* Redmi Note 13 series (2023-) */
+  { p: '23129RAA', n: 'Redmi Note 13',        r: 30 },
+  { p: '23129RA5', n: 'Redmi Note 13',        r: 30 },
+  { p: '23124RA7', n: 'Redmi Note 13',        r: 30 },
+  { p: '2312DRAA', n: 'Redmi Note 13 5G',     r: 32 },
+  { p: '23117RA6', n: 'Redmi Note 13 Pro',    r: 36 },
+  { p: '2312DRA5', n: 'Redmi Note 13 Pro 5G', r: 36 },
+  { p: '2312CRAD', n: 'Redmi Note 13 Pro 5G', r: 36 },
+  { p: '23090RA9', n: 'Redmi Note 13 Pro+',   r: 38 },
+  { p: '2406ERN9', n: 'Redmi Note 13R',       r: 32 },
+  { p: '2311FRAF', n: 'Redmi Note 13R Pro',   r: 32 },
+  /* Redmi Note 14 series */
+  { p: '24117RN7', n: 'Redmi Note 14',        r: 32 },
+  { p: '24094RAD', n: 'Redmi Note 14 5G',     r: 32 },
+  { p: '2502FRA6', n: 'Redmi Note 14S',       r: 36 },
+  { p: '24116RAC', n: 'Redmi Note 14 Pro',    r: 38 },
+  { p: '24090RA2', n: 'Redmi Note 14 Pro 5G', r: 38 },
+  { p: '24115RA8', n: 'Redmi Note 14 Pro+',   r: 40 },
+  /* Redmi Note 15 series */
+  { p: '2510DRA2', n: 'Redmi Note 15',        r: 34 },
+  { p: '25098RA9', n: 'Redmi Note 15 5G',     r: 34 },
+  { p: '26022PCA', n: 'Redmi Note 15 SE 5G',  r: 34 },
+  { p: '25100RA6', n: 'Redmi Note 15 Pro',    r: 40 },
+  { p: '25080RAB', n: 'Redmi Note 15 Pro 5G', r: 40 },
+  { p: '2510ERA8', n: 'Redmi Note 15 Pro+',   r: 42 },
+  { p: '25104RAD', n: 'Redmi Note 15 Pro+',   r: 42 },
+  { p: '25057RA0', n: 'Redmi Note 15R',       r: 34 },
+  /* Redmi budget line (unified) */
+  { p: '2404ARN4', n: 'Redmi 13',             r: 30 },
+  { p: '24049RN2', n: 'Redmi 13',             r: 30 },
+  { p: '24040RN6', n: 'Redmi 13',             r: 30 },
+  { p: '23106RN0', n: 'Redmi 13C',            r: 28 },
+  { p: '2311DRN1', n: 'Redmi 13C',            r: 28 },
+  { p: '23100RN8', n: 'Redmi 13C',            r: 28 },
+  { p: '23108RN0', n: 'Redmi 13C',            r: 28 },
+  { p: '23124RN8', n: 'Redmi 13C 5G',         r: 28 },
+  { p: '2409BRN2', n: 'Redmi 14C',            r: 28 },
+  { p: '2411DRN4', n: 'Redmi 14C 5G',         r: 28 },
+  { p: '25062RN2', n: 'Redmi 15',             r: 30 },
+  { p: '25057RN0', n: 'Redmi 15 5G',          r: 30 },
+  { p: '25078RA3', n: 'Redmi 15C',            r: 28 },
+  { p: '2508CRN2', n: 'Redmi 15C 5G',         r: 28 },
+  { p: '25082RNC', n: 'Redmi 15R 5G',         r: 28 },
+  { p: '2602BRNA', n: 'Redmi 15A 5G',         r: 28 }
+];
+/* unified fallback: pre-2023 Xiaomi/Redmi + other brands */
+var BRAND_DEFAULTS = {
   'samsung': 30, 'samsung-ultra': 16, 'samsung-fold': 14,
-  'xiaomi': 44, 'redmi': 30,
+  'xiaomi': 44, 'redmi': 32,
   'huawei': 36,
   'oppo': 40, 'oneplus': 40,
   'vivo': 36,
   'pixel': 18
 };
 var cssWidth = Math.min(screen.width, screen.height);
+
+function lookupAndroidModel(model) {
+  var m = (model || '').toUpperCase();
+  if (!m) return null;
+  for (var i = 0; i < ANDROID_MODELS.length; i++) {
+    if (m.indexOf(ANDROID_MODELS[i].p) === 0) return ANDROID_MODELS[i];
+  }
+  return null;
+}
 
 function brandOfModel(model) {
   var m = model.toUpperCase();
@@ -168,7 +290,7 @@ function brandOfModel(model) {
   if (/^LE\d{4}/.test(m)) return 'oneplus';
   if (/^(CPH|OPD|PEDM|PGAM|PHT|PHU|PJD|PJA)/.test(m)) return 'oppo';
   if (/^V\d{4}[A-Z]{0,2}$/.test(m)) return 'vivo';
-  if (/^M2\d{3}/.test(m) || /^2\d{9,}/.test(m)) return cssWidth >= 400 ? 'xiaomi' : 'redmi';
+  if (/^M2\d{3}/.test(m) || /^2\d{7}/.test(m)) return cssWidth >= 400 ? 'xiaomi' : 'redmi';
   return '';
 }
 function brandFromBrowser() {
@@ -230,6 +352,7 @@ var state = {
   browser: getBrowser(),
   model: '',
   brand: '',
+  deviceName: '',
   source: '',
   radius: 16,
   exact: false,
@@ -244,13 +367,32 @@ function resolveRadius() {
     var est = radiusByIOSSize();
     if (est !== null) { state.radius = est; state.exact = false; state.source = 'iOS screen-size table'; return; }
   }
-  if (state.platform === 'Android' && state.brand && BRAND_RADIUS[state.brand]) {
-    state.radius = BRAND_RADIUS[state.brand]; state.exact = false;
-    state.source = 'model database (' + state.brand + ')'; return;
+  if (state.platform === 'Android') {
+    state.deviceName = '';
+    var hit = lookupAndroidModel(state.model);
+    if (hit) {
+      state.radius = hit.r; state.exact = false;
+      state.deviceName = hit.n;
+      state.source = 'model database · ' + hit.n; return;
+    }
+    if (state.brand && BRAND_DEFAULTS[state.brand]) {
+      state.radius = BRAND_DEFAULTS[state.brand]; state.exact = false;
+      state.source = 'brand default · ' + state.brand; return;
+    }
   }
   if (mq === 0) { state.radius = 16; state.exact = false; state.source = 'square screen — default'; return; }
   state.radius = 16; state.exact = false;
   state.source = state.platform === 'Android' ? 'not detected — default' : 'default';
+}
+
+/* ---------- corner shape ----------
+   Modern phone screens (Xiaomi/Redmi included, like iPhone) use
+   continuous-curvature "squircle" corners, not quarter-circle arcs.
+   The radius values below are base radii; `corner-shape: squircle`
+   approximates the same curve where the browser supports it. */
+function cornerShapeSupported() {
+  try { return !!(window.CSS && CSS.supports && CSS.supports('corner-shape', 'squircle')); }
+  catch (e) { return false; }
 }
 
 /* ---------- render ---------- */
@@ -258,7 +400,9 @@ function render() {
   var dpr = window.devicePixelRatio || 1;
   var sa = safeArea();
   var hdr = hdrSupport();
-  var modelText = state.model || (state.platform === 'Android' ? '(detecting…)' : 'not exposed');
+  var modelText = state.model
+    ? (state.deviceName ? state.model + ' · ' + state.deviceName : state.model)
+    : (state.platform === 'Android' ? '(detecting…)' : 'not exposed');
 
   var rows = [
     ['Platform', state.platform],
@@ -267,6 +411,9 @@ function render() {
     ['Screen', screen.width + ' × ' + screen.height + ' px @ ' + dpr + 'x'],
     ['Safe-area t/r/b/l', sa[0] + ' / ' + sa[1] + ' / ' + sa[2] + ' / ' + sa[3] + ' px'],
     ['radius media query', state.mq ? 'supported' : 'not supported'],
+    ['Corner shape', cornerShapeSupported()
+      ? 'squircle (continuous curvature)'
+      : 'circular (browser fallback)'],
     ['Source', state.source || '—'],
     ['Corner radius', (state.exact ? '' : '~') + state.radius + ' px — ' + (state.exact ? 'exact' : 'estimated/default')],
     ['Color scheme', colorScheme() + ' (system)'],
